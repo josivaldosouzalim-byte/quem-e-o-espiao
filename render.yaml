@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: quem-e-o-espiao
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /

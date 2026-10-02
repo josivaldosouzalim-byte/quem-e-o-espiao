@@ -1,0 +1,6 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quem é o Espião?</title><link rel="stylesheet" href="style.css"></head><body>
+<main>
+<section id="profile" class="card"><h1>🕵️ QUEM É O ESPIÃO?</h1><p>Crie seu perfil</p><label class="avatarPick"><img id="preview"><span>📷 Escolher foto</span><input id="photo" type="file" accept="image/*"></label><input id="name" placeholder="Seu nome"><button id="save">CONTINUAR</button></section>
+<section id="home" class="card hide"><h1>🕵️ QUEM É O ESPIÃO?</h1><div id="me"></div><button id="create">CRIAR SALA</button><div class="or">ou</div><input id="roomCode" placeholder="CÓDIGO DA SALA"><button id="join">ENTRAR</button><button class="ghost" id="edit">EDITAR PERFIL</button></section>
+<section id="game" class="card hide"><header><h2>🕵️ QUEM É O ESPIÃO?</h2><b id="code"></b></header><div id="secret" class="secret hide"></div><div id="notice"></div><div class="small" style="text-align:center">🌐 V5 Online • Para voz, permita o microfone quando solicitado.</div><div id="players"></div><div id="voteBox"></div><div id="results"></div><div id="hostControls"></div><button id="mic">🎙️ Microfone: ativar</button></section>
+</main><script src="/socket.io/socket.io.js"></script><script src="app.js"></script></body></html>

@@ -1,0 +1,15 @@
+{
+  "name": "quem-e-o-espiao-v5-online",
+  "version": "5.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
