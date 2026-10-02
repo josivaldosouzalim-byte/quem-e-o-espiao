@@ -1,4 +1,6 @@
-const s=io();let profile=JSON.parse(localStorage.getItem("spyProfile")||"null"),state=null,stream=null,audioCtx=null,analyser=null,meterTimer=null,countTimer=null,revealCache=null;
+const s=io({reconnection:true,reconnectionAttempts:10,reconnectionDelay:500});let profile=JSON.parse(localStorage.getItem("spyProfile")||"null"),state=null,stream=null,audioCtx=null,analyser=null,meterTimer=null,countTimer=null,revealCache=null;
+let playerToken=localStorage.getItem("spyPlayerToken");if(!playerToken){playerToken=(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random());localStorage.setItem("spyPlayerToken",playerToken)}
+let joining=false;
 const peers=new Map(),remoteAudio=new Map(),remoteMeters=new Map(),$=x=>document.getElementById(x);
 const cats=["Países","Futebol","Objetos","Famosos","Animais","Comidas","Lugares"];
 const avatar=p=>p||"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' fill='%23334466'/%3E%3Ctext x='50' y='62' text-anchor='middle' font-size='48'%3E👤%3C/text%3E%3C/svg%3E";
@@ -6,7 +8,11 @@ function show(x){["profile","home","game"].forEach(i=>$(i).classList.add("hide")
 function load(){if(profile){$("name").value=profile.name;$("preview").src=avatar(profile.photo);$("me").innerHTML=`<img class="avatar" src="${avatar(profile.photo)}"> <b>${profile.name}</b>`;show("home")}else show("profile")}load();
 $("photo").onchange=e=>{let f=e.target.files[0];if(!f)return;let r=new FileReader;r.onload=()=>$("preview").src=r.result;r.readAsDataURL(f)};
 $("save").onclick=()=>{let n=$("name").value.trim();if(!n)return alert("Digite seu nome.");profile={name:n,photo:$("preview").src};localStorage.setItem("spyProfile",JSON.stringify(profile));load()};
-$("edit").onclick=()=>show("profile");$("create").onclick=()=>s.emit("create",profile);$("join").onclick=()=>s.emit("join",{...profile,code:$("roomCode").value.trim()});
+$("edit").onclick=()=>show("profile");
+$("create").onclick=()=>{if(joining)return;joining=true;s.emit("create",{...profile,token:playerToken},res=>{joining=false;if(!res?.ok)alert(res?.error||"Não foi possível criar a sala.")})};
+$("join").onclick=()=>{if(joining)return;let code=$("roomCode").value.trim().toUpperCase().replace(/\s+/g,"");if(!code)return alert("Digite o código da sala.");joining=true;$("join").textContent="ENTRANDO...";s.emit("join",{...profile,token:playerToken,code},res=>{joining=false;$("join").textContent="ENTRAR";if(!res?.ok)alert(res?.error||"Não foi possível entrar.");})};
+s.on("joinSuccess",d=>{joining=false;$("join").textContent="ENTRAR";console.log("Entrada confirmada na sala",d.code)});
+s.on("connect_error",()=>{joining=false;$("join").textContent="ENTRAR";alert("Não foi possível conectar ao servidor. Tente novamente.")});
 s.on("err",alert);s.on("kicked",()=>{alert("O anfitrião removeu você da sala.");location.reload()});
 s.on("secret",d=>{$("secret").classList.remove("hide");$("secret").innerHTML=`<div class="small">RODADA ${d.round} • ${d.category}</div><h2>${d.word}</h2><b>🤫 Não diga a palavra. Fale apenas características.</b>`});
 s.on("revealData",d=>{revealCache=d;drawReveal()});
