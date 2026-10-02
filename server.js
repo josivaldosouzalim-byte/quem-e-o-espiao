@@ -1,33 +1,48 @@
-
-const express=require("express"), http=require("http"), {Server}=require("socket.io");
-const app=express(), server=http.createServer(app), io=new Server(server,{maxHttpBufferSize:2e6});
+const express=require("express"),http=require("http"),{Server}=require("socket.io");
+const app=express(),server=http.createServer(app),io=new Server(server,{maxHttpBufferSize:2e6});
 app.use(express.static("public"));
 const rooms={};
-const pairs=[
- ["Países","Brasil","Argentina"],["Países","Japão","Coreia do Sul"],["Futebol","Real Madrid","Barcelona"],
- ["Futebol","Corinthians","Palmeiras"],["Objetos","Garfo","Colher"],["Objetos","Celular","Tablet"],
- ["Famosos","Neymar","Vinícius Júnior"],["Animais","Leão","Tigre"],["Comidas","Pizza","Lasanha"],
- ["Lugares","Praia","Piscina"]
-];
+const bank={
+"Países":[["Brasil","Argentina"],["Japão","Coreia do Sul"],["Portugal","Espanha"],["Estados Unidos","Canadá"],["França","Itália"],["Austrália","Nova Zelândia"],["México","Colômbia"],["China","Índia"]],
+"Futebol":[["Real Madrid","Barcelona"],["Corinthians","Palmeiras"],["Flamengo","Vasco"],["São Paulo","Santos"],["Manchester City","Liverpool"],["Grêmio","Internacional"],["Bayern de Munique","Borussia Dortmund"],["Brasil","Argentina"]],
+"Objetos":[["Garfo","Colher"],["Celular","Tablet"],["Cadeira","Banco"],["Lápis","Caneta"],["Copo","Caneca"],["Relógio","Cronômetro"],["Mochila","Mala"],["Ventilador","Ar-condicionado"]],
+"Famosos":[["Neymar","Vinícius Júnior"],["Cristiano Ronaldo","Lionel Messi"],["Anitta","Ivete Sangalo"],["Silvio Santos","Faustão"],["Ayrton Senna","Lewis Hamilton"]],
+"Animais":[["Leão","Tigre"],["Cachorro","Lobo"],["Gato","Onça"],["Golfinho","Baleia"],["Águia","Falcão"],["Cavalo","Zebra"],["Jacaré","Crocodilo"]],
+"Comidas":[["Pizza","Lasanha"],["Hambúrguer","Sanduíche"],["Arroz","Macarrão"],["Sorvete","Açaí"],["Bolo","Torta"],["Coxinha","Pastel"],["Chocolate","Brigadeiro"]],
+"Lugares":[["Praia","Piscina"],["Escola","Faculdade"],["Hospital","Clínica"],["Cinema","Teatro"],["Shopping","Supermercado"],["Hotel","Pousada"],["Parque","Praça"]]
+};
 const code=()=>Math.random().toString(36).slice(2,7).toUpperCase();
-function pub(r){return {code:r.code,host:r.host,phase:r.phase,players:Object.values(r.players).map(p=>({id:p.id,name:p.name,photo:p.photo,voted:!!r.votes[p.id]})),voteCount:Object.keys(r.votes).length,total:Object.keys(r.players).length,accused:r.accused?{id:r.accused,name:r.players[r.accused]?.name,photo:r.players[r.accused]?.photo}:null,results:r.results||null,category:r.category||null};}
-function emit(r){io.to(r.code).emit("state",pub(r));}
-function top(r){let c={};Object.values(r.votes).forEach(v=>c[v]=(c[v]||0)+1); let mx=Math.max(0,...Object.values(c)); return {counts:c,ids:Object.keys(c).filter(k=>c[k]===mx),max:mx};}
+const defaults=()=>({categories:Object.keys(bank),rounds:5,discussionSeconds:120,defenseSeconds:45});
+function pub(r){return {code:r.code,host:r.host,phase:r.phase,round:r.round||0,settings:r.settings,players:Object.values(r.players).map(p=>({id:p.id,name:p.name,photo:p.photo,score:p.score||0,voted:!!r.votes[p.id]})),voteCount:Object.keys(r.votes).length,total:Object.keys(r.players).length,accused:r.accused?{id:r.accused,name:r.players[r.accused]?.name,photo:r.players[r.accused]?.photo}:null,results:r.results||null,category:r.category||null,deadline:r.deadline||null};}
+function emit(r){io.to(r.code).emit("state",pub(r))}
+function top(r){let c={};Object.values(r.votes).forEach(v=>c[v]=(c[v]||0)+1);let mx=Math.max(0,...Object.values(c));return{counts:c,ids:Object.keys(c).filter(k=>c[k]===mx),max:mx}}
+function clearT(r){if(r.timer){clearTimeout(r.timer);r.timer=null}r.deadline=null}
+function timed(r,seconds,event){clearT(r);r.deadline=Date.now()+seconds*1000;r.timer=setTimeout(()=>{r.timer=null;r.deadline=null;event();},seconds*1000);emit(r)}
+function startRound(r){
+ clearT(r); if(r.round>=r.settings.rounds){r.phase="gameover";emit(r);return}
+ r.round++; let cats=r.settings.categories.filter(c=>bank[c]); if(!cats.length)cats=Object.keys(bank);
+ let cat=cats[Math.floor(Math.random()*cats.length)], pair=bank[cat][Math.floor(Math.random()*bank[cat].length)],ids=Object.keys(r.players);
+ r.spy=ids[Math.floor(Math.random()*ids.length)];r.category=cat;r.normal=pair[0];r.spyword=pair[1];r.phase="discussion";r.votes={};r.results=null;r.accused=null;
+ ids.forEach(id=>io.to(id).emit("secret",{word:id===r.spy?r.spyword:r.normal,category:cat,round:r.round}));
+ timed(r,r.settings.discussionSeconds,()=>{r.phase="vote1";r.votes={};emit(r)});
+}
 io.on("connection",s=>{
- s.on("create",d=>{let c=code();rooms[c]={code:c,host:s.id,players:{},phase:"lobby",votes:{},results:null};rooms[c].players[s.id]={id:s.id,name:d.name,photo:d.photo};s.join(c);s.data.room=c;emit(rooms[c]);});
- s.on("join",d=>{let r=rooms[(d.code||"").toUpperCase()];if(!r)return s.emit("err","Sala não encontrada.");if(r.phase!=="lobby")return s.emit("err","A partida já começou.");r.players[s.id]={id:s.id,name:d.name,photo:d.photo};s.join(r.code);s.data.room=r.code;emit(r);});
- s.on("start",()=>{let r=rooms[s.data.room];if(!r||r.host!==s.id)return;if(Object.keys(r.players).length<3)return s.emit("err","São necessários pelo menos 3 jogadores.");let [cat,normal,spy]=pairs[Math.floor(Math.random()*pairs.length)], ids=Object.keys(r.players);r.spy=ids[Math.floor(Math.random()*ids.length)];r.category=cat;r.normal=normal;r.spyword=spy;r.phase="discussion";r.votes={};r.results=null;r.accused=null;ids.forEach(id=>io.to(id).emit("secret",{word:id===r.spy?spy:normal,category:cat}));emit(r);});
- s.on("speaking",v=>{let r=rooms[s.data.room];if(r) s.to(r.code).emit("speaking",{id:s.id,on:!!v});});
- s.on("vote",id=>{let r=rooms[s.data.room];if(!r||!["vote1","vote2"].includes(r.phase)||r.votes[s.id]||!r.players[id])return;r.votes[s.id]=id;emit(r);if(Object.keys(r.votes).length===Object.keys(r.players).length)io.to(r.code).emit("allVoted");});
- s.on("beginVote1",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id){r.phase="vote1";r.votes={};r.results=null;emit(r);}});
- s.on("hostOk1",()=>{let r=rooms[s.data.room];if(!r||r.host!==s.id||r.phase!=="vote1"||Object.keys(r.votes).length<Object.keys(r.players).length)return;let t=top(r);r.results=t.counts;r.accused=t.ids[0];r.phase="defense";emit(r);});
- s.on("beginVote2",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id&&r.phase==="defense"){r.phase="vote2";r.votes={};r.results=null;emit(r);}});
- s.on("reveal",()=>{let r=rooms[s.data.room];if(!r||r.host!==s.id||r.phase!=="vote2"||Object.keys(r.votes).length<Object.keys(r.players).length)return;r.results=top(r).counts;r.phase="reveal";emit(r);io.to(r.code).emit("revealData",{spy:r.players[r.spy],normal:r.normal,spyword:r.spyword});});
- s.on("newRound",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id){r.phase="lobby";r.votes={};r.results=null;r.accused=null;r.spy=null;emit(r);}});
-
- s.on("rtcOffer",d=>{let r=rooms[s.data.room];if(r&&r.players[d.to])io.to(d.to).emit("rtcOffer",{from:s.id,sdp:d.sdp});});
- s.on("rtcAnswer",d=>{let r=rooms[s.data.room];if(r&&r.players[d.to])io.to(d.to).emit("rtcAnswer",{from:s.id,sdp:d.sdp});});
- s.on("rtcIce",d=>{let r=rooms[s.data.room];if(r&&r.players[d.to])io.to(d.to).emit("rtcIce",{from:s.id,candidate:d.candidate});});
- s.on("disconnect",()=>{let r=rooms[s.data.room];if(!r)return;delete r.players[s.id];if(!Object.keys(r.players).length){delete rooms[r.code];return}if(r.host===s.id)r.host=Object.keys(r.players)[0];emit(r);});
+ s.on("create",d=>{let c=code();rooms[c]={code:c,host:s.id,players:{},phase:"lobby",votes:{},round:0,settings:defaults()};rooms[c].players[s.id]={id:s.id,name:d.name,photo:d.photo,score:0};s.join(c);s.data.room=c;emit(rooms[c])});
+ s.on("join",d=>{let r=rooms[(d.code||"").toUpperCase()];if(!r)return s.emit("err","Sala não encontrada.");if(r.phase!=="lobby")return s.emit("err","A partida já começou.");r.players[s.id]={id:s.id,name:d.name,photo:d.photo,score:0};s.join(r.code);s.data.room=r.code;emit(r)});
+ s.on("settings",d=>{let r=rooms[s.data.room];if(!r||r.host!==s.id||r.phase!=="lobby")return;r.settings={categories:Array.isArray(d.categories)&&d.categories.length?d.categories:Object.keys(bank),rounds:Math.max(1,Math.min(20,+d.rounds||5)),discussionSeconds:Math.max(30,Math.min(600,+d.discussionSeconds||120)),defenseSeconds:Math.max(15,Math.min(180,+d.defenseSeconds||45))};emit(r)});
+ s.on("start",()=>{let r=rooms[s.data.room];if(!r||r.host!==s.id)return;if(Object.keys(r.players).length<3)return s.emit("err","São necessários pelo menos 3 jogadores.");r.round=0;Object.values(r.players).forEach(p=>p.score=0);startRound(r)});
+ s.on("beginVote1",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id&&r.phase==="discussion"){clearT(r);r.phase="vote1";r.votes={};emit(r)}});
+ s.on("vote",id=>{let r=rooms[s.data.room];if(!r||!["vote1","vote2"].includes(r.phase)||r.votes[s.id]||!r.players[id]||id===s.id)return;r.votes[s.id]=id;emit(r);if(Object.keys(r.votes).length===Object.keys(r.players).length)io.to(r.code).emit("allVoted")});
+ s.on("hostOk1",()=>{let r=rooms[s.data.room];if(!r||r.host!==s.id||r.phase!=="vote1"||Object.keys(r.votes).length<Object.keys(r.players).length)return;let t=top(r);r.results=t.counts;r.accused=t.ids[0];r.phase="defense";timed(r,r.settings.defenseSeconds,()=>{r.phase="vote2";r.votes={};r.results=null;emit(r)})});
+ s.on("beginVote2",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id&&r.phase==="defense"){clearT(r);r.phase="vote2";r.votes={};r.results=null;emit(r)}});
+ s.on("reveal",()=>{let r=rooms[s.data.room];if(!r||r.host!==s.id||r.phase!=="vote2"||Object.keys(r.votes).length<Object.keys(r.players).length)return;let t=top(r);r.results=t.counts;r.phase="reveal";let caught=t.ids.length===1&&t.ids[0]===r.spy;if(caught){Object.entries(r.votes).forEach(([voter,target])=>{if(target===r.spy&&r.players[voter])r.players[voter].score=(r.players[voter].score||0)+2})}else if(r.players[r.spy])r.players[r.spy].score=(r.players[r.spy].score||0)+3;emit(r);io.to(r.code).emit("revealData",{spy:r.players[r.spy],normal:r.normal,spyword:r.spyword,caught})});
+ s.on("newRound",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id&&r.phase==="reveal")startRound(r)});
+ s.on("restartGame",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id){clearT(r);r.phase="lobby";r.round=0;r.votes={};r.results=null;r.accused=null;emit(r)}});
+ s.on("kick",id=>{let r=rooms[s.data.room];if(!r||r.host!==s.id||id===s.id||!r.players[id])return;io.to(id).emit("kicked");io.sockets.sockets.get(id)?.leave(r.code);delete r.players[id];emit(r)});
+ s.on("speaking",v=>{let r=rooms[s.data.room];if(r)s.to(r.code).emit("speaking",{id:s.id,on:!!v})});
+ s.on("rtcOffer",d=>{let r=rooms[s.data.room];if(r&&r.players[d.to])io.to(d.to).emit("rtcOffer",{from:s.id,sdp:d.sdp})});
+ s.on("rtcAnswer",d=>{let r=rooms[s.data.room];if(r&&r.players[d.to])io.to(d.to).emit("rtcAnswer",{from:s.id,sdp:d.sdp})});
+ s.on("rtcIce",d=>{let r=rooms[s.data.room];if(r&&r.players[d.to])io.to(d.to).emit("rtcIce",{from:s.id,candidate:d.candidate})});
+ s.on("disconnect",()=>{let r=rooms[s.data.room];if(!r)return;delete r.players[s.id];if(!Object.keys(r.players).length){clearT(r);delete rooms[r.code];return}if(r.host===s.id)r.host=Object.keys(r.players)[0];emit(r)})
 });
-server.listen(process.env.PORT||3000,()=>console.log("QUEM É O ESPIÃO V4 em http://localhost:"+(process.env.PORT||3000)));
+server.listen(process.env.PORT||3000,()=>console.log("QUEM É O ESPIÃO V6 ONLINE em porta "+(process.env.PORT||3000)));
