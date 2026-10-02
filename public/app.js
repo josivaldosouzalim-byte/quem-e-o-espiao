@@ -1,111 +1,38 @@
-const s=io();let profile=JSON.parse(localStorage.getItem("spyProfile")||"null"),state=null,stream=null,audioCtx=null,analyser=null,timer=null;
-const $=x=>document.getElementById(x), show=x=>{["profile","home","game"].forEach(i=>$(i).classList.add("hide"));$(x).classList.remove("hide")};
-function avatar(photo){return photo||"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' fill='%23334466'/%3E%3Ctext x='50' y='62' text-anchor='middle' font-size='48'%3E👤%3C/text%3E%3C/svg%3E"}
+const s=io();let profile=JSON.parse(localStorage.getItem("spyProfile")||"null"),state=null,stream=null,audioCtx=null,analyser=null,meterTimer=null,countTimer=null,revealCache=null;
+const peers=new Map(),remoteAudio=new Map(),remoteMeters=new Map(),$=x=>document.getElementById(x);
+const cats=["Países","Futebol","Objetos","Famosos","Animais","Comidas","Lugares"];
+const avatar=p=>p||"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' fill='%23334466'/%3E%3Ctext x='50' y='62' text-anchor='middle' font-size='48'%3E👤%3C/text%3E%3C/svg%3E";
+function show(x){["profile","home","game"].forEach(i=>$(i).classList.add("hide"));$(x).classList.remove("hide")}
 function load(){if(profile){$("name").value=profile.name;$("preview").src=avatar(profile.photo);$("me").innerHTML=`<img class="avatar" src="${avatar(profile.photo)}"> <b>${profile.name}</b>`;show("home")}else show("profile")}load();
-$("photo").onchange=e=>{let f=e.target.files[0];if(!f)return;let r=new FileReader;r.onload=()=>{$("preview").src=r.result};r.readAsDataURL(f)};
-$("save").onclick=()=>{let name=$("name").value.trim();if(!name)return alert("Digite seu nome.");profile={name,photo:$("preview").src};localStorage.setItem("spyProfile",JSON.stringify(profile));load()};
+$("photo").onchange=e=>{let f=e.target.files[0];if(!f)return;let r=new FileReader;r.onload=()=>$("preview").src=r.result;r.readAsDataURL(f)};
+$("save").onclick=()=>{let n=$("name").value.trim();if(!n)return alert("Digite seu nome.");profile={name:n,photo:$("preview").src};localStorage.setItem("spyProfile",JSON.stringify(profile));load()};
 $("edit").onclick=()=>show("profile");$("create").onclick=()=>s.emit("create",profile);$("join").onclick=()=>s.emit("join",{...profile,code:$("roomCode").value.trim()});
-s.on("err",m=>alert(m));s.on("state",st=>{state=st;show("game");render()});s.on("secret",d=>{$("secret").classList.remove("hide");$("secret").innerHTML=`<div class="small">SUA PALAVRA • ${d.category}</div><h2>${d.word}</h2><b>🤫 Não diga a palavra. Dê apenas características.</b>`});
-s.on("allVoted",()=>render());s.on("revealData",d=>{$("results").innerHTML=`<div class="result"><h2>🕵️ O ESPIÃO ERA...</h2><img class="avatar" src="${avatar(d.spy.photo)}"><h2>${d.spy.name}</h2><p>Palavra do grupo: <b>${d.normal}</b></p><p>Palavra do espião: <b>${d.spyword}</b></p></div>`});
-function render(){if(!state)return;$("code").textContent="Sala "+state.code;let mine=state.players.find(p=>p.id===s.id),host=state.host===s.id,all=state.voteCount===state.total&&state.total>0;
-$("players").innerHTML=state.players.map(p=>`<div class="player"><img id="av-${p.id}" class="avatar" src="${avatar(p.photo)}"><div><b>${p.name}</b>${p.id===state.host?" 👑":""}<div class="small">${["vote1","vote2"].includes(state.phase)?(p.voted?"✅ VOTOU":"⏳ AGUARDANDO"):""}</div></div><span class="status"></span></div>`).join("");
-let n=$("notice");n.innerHTML="";$("voteBox").innerHTML="";$("hostControls").innerHTML="";if(state.phase==="lobby"){n.innerHTML=`<div class="alert">Sala de espera • ${state.total}/3 mínimo</div>`;if(host)$("hostControls").innerHTML=`<button onclick="s.emit('start')">INICIAR JOGO</button>`}
-if(state.phase==="discussion"){n.innerHTML=`<div class="alert">🎙️ Discussão aberta. Descrevam suas palavras sem revelá-las.</div>`;if(host)$("hostControls").innerHTML=`<button onclick="s.emit('beginVote1')">🔒 FECHAR MICROFONES E INICIAR VOTAÇÃO</button>`}
-if(["vote1","vote2"].includes(state.phase)){n.innerHTML=`<div class="alert"><h3>🗳️ ${state.phase==="vote1"?"PRIMEIRA VOTAÇÃO":"VOTAÇÃO FINAL"}</h3><b>Votos realizados: ${state.voteCount} / ${state.total}</b>${all?"<h2>⚠️ TODOS JÁ VOTARAM!</h2><p>Microfones continuam fechados.<br>Aguardando o anfitrião...</p>":""}</div>`;
-if(!mine?.voted)$("voteBox").innerHTML=state.players.filter(p=>p.id!==s.id).map(p=>`<div class="player"><img class="avatar" src="${avatar(p.photo)}"><b>${p.name}</b><button class="voteBtn" onclick="s.emit('vote','${p.id}')">VOTAR</button></div>`).join("");else $("voteBox").innerHTML=`<div class="result">✅ Seu voto foi registrado.</div>`;
-if(host&&all)$("hostControls").innerHTML=state.phase==="vote1"?`<button onclick="s.emit('hostOk1')">✅ OK — MOSTRAR RESULTADO E ABRIR DEFESA</button>`:`<button onclick="s.emit('reveal')">🕵️ OK — REVELAR O ESPIÃO</button>`}
-if(state.phase==="defense"){n.innerHTML=`<div class="alert"><h2>🎙️ DEFESA</h2><p><b>${state.accused?.name||""}</b> recebeu mais votos e pode se defender.</p></div>`;results();if(host)$("hostControls").innerHTML=`<button onclick="s.emit('beginVote2')">🔒 ENCERRAR DEFESA E INICIAR VOTAÇÃO FINAL</button>`}
-if(state.phase==="reveal"){results();if(host)$("hostControls").innerHTML=`<button onclick="s.emit('newRound')">🔄 NOVA RODADA</button>`}}
-function results(){if(!state.results)return;let max=Math.max(1,...Object.values(state.results));$("results").innerHTML=`<div class="result"><h3>📊 CONTAGEM DOS VOTOS</h3>${state.players.map(p=>{let v=state.results[p.id]||0;return `<p><b>${p.name}</b> — ${v} voto${v===1?"":"s"}</p><div class="bar"><div class="fill" style="width:${v/max*100}%"></div></div>`}).join("")}</div>`}
-$("mic").onclick=async()=>{if(stream){let on=!stream.getAudioTracks()[0].enabled;stream.getAudioTracks()[0].enabled=on;$("mic").textContent=on?"🎙️ Microfone: ligado":"🔇 Microfone: desligado";return}try{stream=await navigator.mediaDevices.getUserMedia({audio:true});$("mic").textContent="🎙️ Microfone: ligado";audioCtx=new AudioContext();let src=audioCtx.createMediaStreamSource(stream);analyser=audioCtx.createAnalyser();analyser.fftSize=512;src.connect(analyser);let a=new Uint8Array(analyser.frequencyBinCount),speaking=false;timer=setInterval(()=>{analyser.getByteFrequencyData(a);let avg=a.reduce((x,y)=>x+y,0)/a.length,on=avg>18;if(on!==speaking){speaking=on;s.emit("speaking",on);let el=$("av-"+s.id);if(el)el.classList.toggle("speaking",on)}},120)}catch(e){alert("Não foi possível acessar o microfone. Verifique a permissão do navegador.")}};
-s.on("speaking",d=>{let el=$("av-"+d.id);if(el)el.classList.toggle("speaking",d.on)});
-
-
-// ===== V5: ÁUDIO WEBRTC ENTRE APARELHOS =====
-const peers=new Map(), remoteAudio=new Map(), remoteMeters=new Map();
-const rtcConfig={iceServers:[
-  {urls:"stun:stun.l.google.com:19302"},
-  {urls:"stun:stun1.l.google.com:19302"}
-]};
-
-function phaseAllowsMyMic(){
-  if(!state) return false;
-  if(state.phase==="discussion") return true;
-  if(state.phase==="defense") return state.accused?.id===s.id;
-  return false;
-}
-function applyPhaseMic(){
-  if(!stream) return;
-  const allow=phaseAllowsMyMic();
-  stream.getAudioTracks().forEach(t=>t.enabled=allow);
-  $("mic").textContent=allow?"🎙️ Microfone: ligado":"🔇 Microfone: fechado pela rodada";
-}
-async function ensureLocalAudio(){
-  if(stream) return stream;
-  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-  setupLocalMeter();
-  applyPhaseMic();
-  return stream;
-}
-function setupLocalMeter(){
-  if(audioCtx) return;
-  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  const src=audioCtx.createMediaStreamSource(stream);
-  analyser=audioCtx.createAnalyser(); analyser.fftSize=512; src.connect(analyser);
-  const a=new Uint8Array(analyser.frequencyBinCount); let speaking=false;
-  timer=setInterval(()=>{
-    if(!stream?.getAudioTracks()[0]?.enabled){ if(speaking){speaking=false;s.emit("speaking",false)} return; }
-    analyser.getByteFrequencyData(a); const avg=a.reduce((x,y)=>x+y,0)/a.length, on=avg>18;
-    if(on!==speaking){speaking=on;s.emit("speaking",on);$("av-"+s.id)?.classList.toggle("speaking",on)}
-  },120);
-}
-function meterRemote(id,ms){
-  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  try{
-    const an=audioCtx.createAnalyser();an.fftSize=512;
-    audioCtx.createMediaStreamSource(ms).connect(an);
-    const a=new Uint8Array(an.frequencyBinCount);
-    const h=setInterval(()=>{an.getByteFrequencyData(a);let avg=a.reduce((x,y)=>x+y,0)/a.length;$("av-"+id)?.classList.toggle("speaking",avg>18)},120);
-    remoteMeters.set(id,h);
-  }catch(e){}
-}
-async function makePeer(id,initiator){
-  if(id===s.id||peers.has(id))return peers.get(id);
-  await ensureLocalAudio();
-  const pc=new RTCPeerConnection(rtcConfig); peers.set(id,pc);
-  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
-  pc.onicecandidate=e=>{if(e.candidate)s.emit("rtcIce",{to:id,candidate:e.candidate})};
-  pc.ontrack=e=>{
-    let a=remoteAudio.get(id);
-    if(!a){a=document.createElement("audio");a.autoplay=true;a.playsInline=true;document.body.appendChild(a);remoteAudio.set(id,a)}
-    a.srcObject=e.streams[0]; meterRemote(id,e.streams[0]);
-  };
-  pc.onconnectionstatechange=()=>{if(["failed","closed","disconnected"].includes(pc.connectionState)&&pc.connectionState!=="disconnected")dropPeer(id)};
-  if(initiator){
-    const offer=await pc.createOffer();await pc.setLocalDescription(offer);s.emit("rtcOffer",{to:id,sdp:pc.localDescription});
-  }
-  return pc;
-}
-function dropPeer(id){peers.get(id)?.close();peers.delete(id);remoteAudio.get(id)?.remove();remoteAudio.delete(id);if(remoteMeters.has(id)){clearInterval(remoteMeters.get(id));remoteMeters.delete(id)}}
-async function syncPeers(){
-  if(!state||state.phase==="lobby")return;
-  try{await ensureLocalAudio()}catch(e){return}
-  for(const p of state.players) if(p.id!==s.id&&!peers.has(p.id) && s.id<p.id) await makePeer(p.id,true);
-  for(const id of [...peers.keys()]) if(!state.players.some(p=>p.id===id))dropPeer(id);
-}
-s.on("rtcOffer",async d=>{try{const pc=await makePeer(d.from,false);await pc.setRemoteDescription(d.sdp);const ans=await pc.createAnswer();await pc.setLocalDescription(ans);s.emit("rtcAnswer",{to:d.from,sdp:pc.localDescription})}catch(e){console.error(e)}});
-s.on("rtcAnswer",async d=>{try{const pc=peers.get(d.from);if(pc)await pc.setRemoteDescription(d.sdp)}catch(e){console.error(e)}});
-s.on("rtcIce",async d=>{try{const pc=peers.get(d.from)||await makePeer(d.from,false);if(d.candidate)await pc.addIceCandidate(d.candidate)}catch(e){console.error(e)}});
-
-// Extend every state update after original render: enforce mic phase and connect peers.
-s.on("state",async()=>{setTimeout(async()=>{applyPhaseMic();await syncPeers()},50)});
-
-// Override mic button for V5: user can grant permission; game phases still have final control.
-$("mic").onclick=async()=>{
-  try{
-    await ensureLocalAudio();
-    if(audioCtx?.state==="suspended")await audioCtx.resume();
-    applyPhaseMic();
-    if(!phaseAllowsMyMic()) alert("O microfone está fechado nesta etapa. O jogo abrirá automaticamente quando sua fase permitir.");
-  }catch(e){alert("Não foi possível acessar o microfone. Permita o uso do microfone no navegador.")}
-};
+s.on("err",alert);s.on("kicked",()=>{alert("O anfitrião removeu você da sala.");location.reload()});
+s.on("secret",d=>{$("secret").classList.remove("hide");$("secret").innerHTML=`<div class="small">RODADA ${d.round} • ${d.category}</div><h2>${d.word}</h2><b>🤫 Não diga a palavra. Fale apenas características.</b>`});
+s.on("revealData",d=>{revealCache=d;drawReveal()});
+s.on("state",st=>{state=st;show("game");render();applyPhaseMic();setTimeout(syncPeers,60)});
+s.on("speaking",d=>$("av-"+d.id)?.classList.toggle("speaking",d.on));
+function countdown(){clearInterval(countTimer);function tick(){if(!state?.deadline){$("timer").textContent="";return}let n=Math.max(0,Math.ceil((state.deadline-Date.now())/1000)),m=Math.floor(n/60),q=String(n%60).padStart(2,"0");$("timer").innerHTML=`⏱️ <span class="timer">${m}:${q}</span>`}tick();countTimer=setInterval(tick,500)}
+function render(){if(!state)return;countdown();$("code").textContent="Sala "+state.code;$("round").textContent=state.round?`Rodada ${state.round}/${state.settings.rounds}`:"Sala de espera";let host=state.host===s.id,mine=state.players.find(p=>p.id===s.id),all=state.voteCount===state.total&&state.total>0;
+$("players").innerHTML=state.players.map(p=>`<div class="player"><img id="av-${p.id}" class="avatar" src="${avatar(p.photo)}"><div class="playerInfo"><b>${p.name}</b>${p.id===state.host?" 👑":""}<div class="score">⭐ ${p.score} pts</div><div class="small">${["vote1","vote2"].includes(state.phase)?(p.voted?"✅ VOTOU":"⏳ AGUARDANDO"):""}</div></div>${host&&state.phase==="lobby"&&p.id!==s.id?`<button class="kick" onclick="s.emit('kick','${p.id}')">EXPULSAR</button>`:""}</div>`).join("");
+$("settings").innerHTML="";$("notice").innerHTML="";$("voteBox").innerHTML="";$("hostControls").innerHTML="";if(state.phase!=="reveal")$("results").innerHTML="";
+if(state.phase==="lobby"){ $("secret").classList.add("hide");$("notice").innerHTML=`<div class="alert">Sala de espera • ${state.total}/3 mínimo</div>`;if(host){$("settings").innerHTML=`<div class="settings"><h3>⚙️ CONFIGURAÇÃO DA PARTIDA</h3><div class="checks">${cats.map(c=>`<label><input type="checkbox" class="cat" value="${c}" ${state.settings.categories.includes(c)?"checked":""}>${c}</label>`).join("")}</div><div class="row"><label>Rodadas<input id="rounds" type="number" min="1" max="20" value="${state.settings.rounds}"></label><label>Discussão (s)<input id="disc" type="number" min="30" value="${state.settings.discussionSeconds}"></label><label>Defesa (s)<input id="def" type="number" min="15" value="${state.settings.defenseSeconds}"></label></div><button onclick="saveSettings()">SALVAR CONFIGURAÇÕES</button></div>`;$("hostControls").innerHTML=`<button onclick="s.emit('start')">🎮 INICIAR PARTIDA</button>`}}
+if(state.phase==="discussion"){$("notice").innerHTML=`<div class="alert">🎙️ DISCUSSÃO ABERTA • Todos podem falar.</div>`;if(host)$("hostControls").innerHTML=`<button onclick="s.emit('beginVote1')">🔒 INICIAR PRIMEIRA VOTAÇÃO</button>`}
+if(["vote1","vote2"].includes(state.phase)){$("notice").innerHTML=`<div class="alert"><h3>🗳️ ${state.phase==="vote1"?"PRIMEIRA VOTAÇÃO":"VOTAÇÃO FINAL"}</h3><b>${state.voteCount}/${state.total} jogadores votaram</b>${all?"<h2>⚠️ TODOS JÁ VOTARAM!</h2><p>Microfones fechados. Aguardando o anfitrião.</p>":""}</div>`;if(!mine?.voted)$("voteBox").innerHTML=state.players.filter(p=>p.id!==s.id).map(p=>`<div class="player"><img class="avatar" src="${avatar(p.photo)}"><b>${p.name}</b><button class="voteBtn" onclick="s.emit('vote','${p.id}')">VOTAR</button></div>`).join("");else $("voteBox").innerHTML=`<div class="result">✅ Seu voto foi registrado.</div>`;if(host&&all)$("hostControls").innerHTML=state.phase==="vote1"?`<button onclick="s.emit('hostOk1')">✅ OK — RESULTADO E DEFESA</button>`:`<button onclick="s.emit('reveal')">🕵️ OK — REVELAR O ESPIÃO</button>`}
+if(state.phase==="defense"){$("notice").innerHTML=`<div class="alert"><h2>🎙️ DEFESA</h2><p><b>${state.accused?.name}</b> recebeu mais votos. Somente seu microfone fica aberto.</p></div>`;drawResults();if(host)$("hostControls").innerHTML=`<button onclick="s.emit('beginVote2')">🔒 ENCERRAR DEFESA E VOTAÇÃO FINAL</button>`}
+if(state.phase==="reveal"){drawResults();drawReveal();if(host)$("hostControls").innerHTML=`<button onclick="s.emit('newRound')">➡️ PRÓXIMA RODADA</button>`}
+if(state.phase==="gameover"){let sorted=[...state.players].sort((a,b)=>b.score-a.score);$("secret").classList.add("hide");$("notice").innerHTML=`<div class="result"><h2>🏆 FIM DA PARTIDA</h2><div class="winner">${sorted.map((p,i)=>`${i+1}º ${p.name} — ⭐ ${p.score}`).join("<br>")}</div></div>`;if(host)$("hostControls").innerHTML=`<button onclick="s.emit('restartGame')">🔄 NOVA PARTIDA</button>`}}
+function saveSettings(){s.emit("settings",{categories:[...document.querySelectorAll(".cat:checked")].map(x=>x.value),rounds:$("rounds").value,discussionSeconds:$("disc").value,defenseSeconds:$("def").value})}
+function drawResults(){if(!state?.results)return;let max=Math.max(1,...Object.values(state.results));$("results").innerHTML=`<div class="result"><h3>📊 CONTAGEM DOS VOTOS</h3>${state.players.map(p=>{let v=state.results[p.id]||0;return `<p><b>${p.name}</b> — ${v} voto${v===1?"":"s"}</p><div class="bar"><div class="fill" style="width:${v/max*100}%"></div></div>`}).join("")}</div>`}
+function drawReveal(){if(!revealCache||state?.phase!=="reveal")return;$("results").innerHTML+=`<div class="result"><h2>🕵️ O ESPIÃO ERA...</h2><img class="avatar" src="${avatar(revealCache.spy.photo)}"><h2>${revealCache.spy.name}</h2><p>Grupo: <b>${revealCache.normal}</b> • Espião: <b>${revealCache.spyword}</b></p><h3>${revealCache.caught?"✅ O grupo descobriu o espião!":"🕵️ O espião escapou!"}</h3></div>`;revealCache=null}
+function phaseAllowsMyMic(){return state?.phase==="discussion"||(state?.phase==="defense"&&state.accused?.id===s.id)}
+function applyPhaseMic(){if(!stream)return;let on=phaseAllowsMyMic();stream.getAudioTracks().forEach(t=>t.enabled=on);$("mic").textContent=on?"🎙️ MICROFONE LIGADO":"🔇 MICROFONE FECHADO PELA RODADA"}
+async function ensureAudio(){if(stream)return stream;stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});setupMeter();applyPhaseMic();return stream}
+function setupMeter(){if(audioCtx)return;audioCtx=new (window.AudioContext||window.webkitAudioContext)();let src=audioCtx.createMediaStreamSource(stream);analyser=audioCtx.createAnalyser();analyser.fftSize=512;src.connect(analyser);let a=new Uint8Array(analyser.frequencyBinCount),talk=false;meterTimer=setInterval(()=>{let enabled=stream?.getAudioTracks()[0]?.enabled;if(!enabled){if(talk){talk=false;s.emit("speaking",false)}return}analyser.getByteFrequencyData(a);let avg=a.reduce((x,y)=>x+y,0)/a.length,on=avg>18;if(on!==talk){talk=on;s.emit("speaking",on);$("av-"+s.id)?.classList.toggle("speaking",on)}},120)}
+$("mic").onclick=async()=>{try{await ensureAudio();if(audioCtx?.state==="suspended")await audioCtx.resume();applyPhaseMic();if(!phaseAllowsMyMic())alert("O microfone está fechado nesta etapa do jogo.")}catch(e){alert("Permita o acesso ao microfone no navegador.")}};
+const rtcConfig={iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]};
+async function makePeer(id,init){if(id===s.id||peers.has(id))return peers.get(id);await ensureAudio();let pc=new RTCPeerConnection(rtcConfig);peers.set(id,pc);stream.getTracks().forEach(t=>pc.addTrack(t,stream));pc.onicecandidate=e=>e.candidate&&s.emit("rtcIce",{to:id,candidate:e.candidate});pc.ontrack=e=>{let a=remoteAudio.get(id);if(!a){a=document.createElement("audio");a.autoplay=true;a.playsInline=true;document.body.appendChild(a);remoteAudio.set(id,a)}a.srcObject=e.streams[0]};if(init){let o=await pc.createOffer();await pc.setLocalDescription(o);s.emit("rtcOffer",{to:id,sdp:pc.localDescription})}return pc}
+async function syncPeers(){if(!state||state.phase==="lobby")return;try{await ensureAudio()}catch(e){return}for(let p of state.players)if(p.id!==s.id&&!peers.has(p.id)&&s.id<p.id)await makePeer(p.id,true)}
+s.on("rtcOffer",async d=>{try{let pc=await makePeer(d.from,false);await pc.setRemoteDescription(d.sdp);let a=await pc.createAnswer();await pc.setLocalDescription(a);s.emit("rtcAnswer",{to:d.from,sdp:pc.localDescription})}catch(e){}});
+s.on("rtcAnswer",async d=>{try{let pc=peers.get(d.from);if(pc)await pc.setRemoteDescription(d.sdp)}catch(e){}});
+s.on("rtcIce",async d=>{try{let pc=peers.get(d.from)||await makePeer(d.from,false);if(d.candidate)await pc.addIceCandidate(d.candidate)}catch(e){}});
