@@ -33,7 +33,23 @@ io.on("connection",s=>{
  s.on("hostOk1",()=>{let r=rooms[s.data.room];if(!r||r.host!==s.id||r.phase!=="vote1"||Object.keys(r.votes).length<eligible(r).length)return;let t=top(r);r.results=t.counts;r.accused=t.ids[0];r.phase="defense";timed(r,r.settings.defenseSeconds,()=>{r.phase="vote2";r.votes={};r.results=null;emit(r)})});
  s.on("beginVote2",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id&&r.phase==="defense"){clearT(r);r.phase="vote2";r.votes={};r.results=null;emit(r)}});
  s.on("reveal",()=>{let r=rooms[s.data.room];if(!r||r.host!==s.id||r.phase!=="vote2"||Object.keys(r.votes).length<eligible(r).length)return;let t=top(r);r.results=t.counts;r.phase="reveal";let caught=t.ids.length===1&&t.ids[0]===r.spy;if(caught){Object.entries(r.votes).forEach(([voter,target])=>{if(target===r.spy&&r.players[voter])r.players[voter].score=(r.players[voter].score||0)+2})}else if(r.players[r.spy])r.players[r.spy].score=(r.players[r.spy].score||0)+3;emit(r);io.to(r.code).emit("revealData",{spy:r.players[r.spy],normal:r.normal,spyword:r.spyword,caught})});
- s.on("newRound",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id&&r.phase==="reveal")startRound(r)});
+s.on("newRound",()=>{
+  let r=rooms[s.data.room];
+  if(!r||r.host!==s.id||r.phase!=="reveal")return;
+
+  if(r.round>=r.settings.rounds){
+    clearT(r);
+    r.phase="gameover";
+    r.votes={};
+    r.results=null;
+    r.accused=null;
+    emit(r);
+    return;
+  }
+
+  startRound(r);
+});
+ 
  s.on("restartGame",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id){clearT(r);r.phase="lobby";r.round=0;r.votes={};r.results=null;r.accused=null;emit(r)}});
  s.on("kick",id=>{let r=rooms[s.data.room];if(!r||r.host!==s.id||id===s.id||!r.players[id])return;io.to(id).emit("kicked");io.sockets.sockets.get(id)?.leave(r.code);delete r.players[id];emit(r)});
  s.on("speaking",v=>{let r=rooms[s.data.room];if(r)s.to(r.code).emit("speaking",{id:s.id,on:!!v})});
