@@ -50,7 +50,30 @@ s.on("newRound",()=>{
   startRound(r);
 });
  
- s.on("restartGame",()=>{let r=rooms[s.data.room];if(r&&r.host===s.id){clearT(r);r.phase="lobby";r.round=0;r.votes={};r.results=null;r.accused=null;emit(r)}});
+ s.on("restartGame",()=>{
+  let r=rooms[s.data.room];
+  if(!r||r.host!==s.id)return;
+
+  clearT(r);
+
+  r.phase="lobby";
+  r.round=0;
+  r.votes={};
+  r.results=null;
+  r.accused=null;
+  r.spy=null;
+  r.category=null;
+  r.normal=null;
+  r.spyword=null;
+
+  Object.values(r.players).forEach(p=>{
+    p.score=0;
+    p.waiting=false;
+    p.active=true;
+  });
+
+  emit(r);
+});
  s.on("kick",id=>{let r=rooms[s.data.room];if(!r||r.host!==s.id||id===s.id||!r.players[id])return;io.to(id).emit("kicked");io.sockets.sockets.get(id)?.leave(r.code);delete r.players[id];emit(r)});
  s.on("speaking",v=>{let r=rooms[s.data.room];if(r)s.to(r.code).emit("speaking",{id:s.id,on:!!v})});
  s.on("rtcOffer",d=>{let r=rooms[s.data.room];if(r&&r.players[d.to])io.to(d.to).emit("rtcOffer",{from:s.id,sdp:d.sdp})});
