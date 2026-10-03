@@ -39,6 +39,7 @@ if(state.phase==="reveal"){
   }
 }
 if(state.phase==="gameover"){let sorted=[...state.players].sort((a,b)=>b.score-a.score);$("secret").classList.add("hide");$("notice").innerHTML=`<div class="result"><h2>🏆 FIM DA PARTIDA</h2><div class="winner">${sorted.map((p,i)=>`${i+1}º ${p.name} — ⭐ ${p.score}`).join("<br>")}</div></div>`;if(host)$("hostControls").innerHTML=`<button onclick="s.emit('restartGame')">🏠 VOLTAR AO INÍCIO</button>
+}
 function saveSettings(){s.emit("settings",{categories:[...document.querySelectorAll(".cat:checked")].map(x=>x.value),rounds:$("rounds").value,discussionSeconds:$("disc").value,defenseSeconds:$("def").value})}
 function drawResults(){if(!state?.results)return;let max=Math.max(1,...Object.values(state.results));$("results").innerHTML=`<div class="result"><h3>📊 CONTAGEM DOS VOTOS</h3>${state.players.filter(p=>p.active!==false&&p.waiting!==true&&p.online!==false).map(p=>{let v=state.results[p.id]||0;return `<p><b>${p.name}</b> — ${v} voto${v===1?"":"s"}</p><div class="bar"><div class="fill" style="width:${v/max*100}%"></div></div>`}).join("")}</div>`}
 function drawReveal(){if(!revealCache||state?.phase!=="reveal")return;$("results").innerHTML+=`<div class="result"><h2>🕵️ O ESPIÃO ERA...</h2><img class="avatar" src="${avatar(revealCache.spy.photo)}"><h2>${revealCache.spy.name}</h2><p>Grupo: <b>${revealCache.normal}</b> • Espião: <b>${revealCache.spyword}</b></p><h3>${revealCache.caught?"✅ O grupo descobriu o espião!":"🕵️ O espião escapou!"}</h3></div>`;revealCache=null}
